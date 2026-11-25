@@ -244,7 +244,7 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
 .gjlist button{border:0;background:none;color:var(--faint);font-size:20px;cursor:pointer;padding:0 4px;line-height:1}
 .gjlist button:hover{color:var(--margin)}
 .gjprev{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:14px}
-.gjprev figure{margin:0}.gjprev canvas{width:100%;height:auto;display:block;border-radius:4px;box-shadow:var(--shadow)}
+.gjprev figure{margin:0}.gjprev canvas{width:100%;height:auto;display:block;border-radius:4px;box-shadow:var(--shadow);outline:1px solid var(--line);outline-offset:-1px}
 .gjprev figcaption{font-size:12px;color:var(--graphite);margin-top:4px;text-align:center}
 .gjnote{margin-top:16px;font-size:13px;color:var(--graphite)}.gjnote p{margin:0 0 8px}
 .doc{margin-top:18px;max-width:880px}.doc h3{margin:18px 0 6px;font-size:16px}.doc li{margin-bottom:6px}
@@ -307,6 +307,10 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
         <button type="button" class="ghostbtn" id="gjAdd">+ 제목 추가</button>
         <p class="hint">제목 칸에서 Enter를 누르면 다음 칸이 생겨요. 콜론(:) 뒤는 다음 줄에 조금 작게 들어가요.</p>
         <label class="c" style="margin-top:12px"><input id="gjNum" type="checkbox" checked><span>번호 크게 넣기</span></label>
+        <fieldset style="margin-top:10px"><legend>색</legend>
+          <label class="c"><input type="radio" name="gjcol" value="black" checked><span>검은 바탕에 흰 글씨<small>스캔할 때 끼우는 간지용이에요. 3단계에서 자동으로 알아봐요.</small></span></label>
+          <label class="c"><input type="radio" name="gjcol" value="white"><span>흰 바탕에 검은 글씨 (색 반전)<small>중간표지로 따로 인쇄하거나 다른 문서에 넣을 때 써요. 간지로 끼우면 3단계에서 알아보지 못해요.</small></span></label>
+        </fieldset>
         <button type="button" class="btn" id="gjMake" style="margin-top:14px">간지 PDF 만들기</button>
         <div class="dl" id="gjDl"></div>
         <div class="gjnote">
@@ -2379,6 +2383,14 @@ const MunjipCore = (() => {
   }
   $('gjAdd').addEventListener('click', () => { titles.push(''); store(); renderList(titles.length - 1); schedule(); });
   $('gjNum').addEventListener('change', schedule);
+  const gjInv = () => { const r = document.querySelector('input[name="gjcol"]:checked'); return !!r && r.value === 'white'; };
+  const gjMakeLabel = () => gjInv() ? '중간표지 PDF 만들기' : '간지 PDF 만들기';
+  try { if (localStorage.getItem('munjip-ganji-color') === 'white') document.querySelector('input[name="gjcol"][value="white"]').checked = true; } catch (e) {}
+  document.querySelectorAll('input[name="gjcol"]').forEach(r => r.addEventListener('change', () => {
+    try { localStorage.setItem('munjip-ganji-color', gjInv() ? 'white' : 'black'); } catch (e) {}
+    $('gjMake').textContent = gjMakeLabel(); $('gjDl').textContent = ''; schedule();
+  }));
+  $('gjMake').textContent = gjMakeLabel();
 
   // layout on a canvas, unit = mm * k
   const PW = 210, PH = 297;
@@ -2454,7 +2466,7 @@ const MunjipCore = (() => {
       if (!t.trim()) return;
       const f = document.createElement('figure'), cv = document.createElement('canvas');
       cv.setAttribute('role', 'img'); cv.setAttribute('aria-label', `${i + 1}. ${t} 간지 미리보기`);
-      const r = drawGanji(cv, 2.4, i + 1, t, withNum);
+      const r = drawGanji(cv, 2.4, i + 1, t, withNum, { invert: gjInv() });
       const c = document.createElement('figcaption');
       c.textContent = `글자 약 ${Math.round(r.size / 0.3528)}pt` + (r.small ? ' · 제목이 길어 더 줄였어요' : '');
       f.append(cv, c); box.appendChild(f);
@@ -2494,16 +2506,17 @@ const MunjipCore = (() => {
     const btn = $('gjMake'); btn.disabled = true; btn.textContent = '만드는 중…';
     try {
       await loadFont();
-      const withNum = $('gjNum').checked, jpgs = [];
+      const withNum = $('gjNum').checked, inv = gjInv(), jpgs = [];
       for (const x of list) {
         const cv = document.createElement('canvas');
-        drawGanji(cv, 8, x.no, x.t, withNum);
+        drawGanji(cv, 8, x.no, x.t, withNum, { invert: inv });
         const b = await new Promise(r => cv.toBlob(r, 'image/jpeg', 0.9));
         jpgs.push({ bytes: new Uint8Array(await b.arrayBuffer()), w: cv.width, h: cv.height });
       }
-      await save('간지.pdf', pdfFromJpegs(jpgs, PW, PH, '간지'), $('gjDl'), `간지 ${list.length}장을 저장했어요. 실제 크기(100%)로 인쇄하세요.`);
+      const nm = inv ? '중간표지' : '간지';
+      await save(nm + '.pdf', pdfFromJpegs(jpgs, PW, PH, nm), $('gjDl'), `${nm} ${list.length}장을 저장했어요. 실제 크기(100%)로 인쇄하세요.`);
     } catch (e) { console.error(e); $('gjDl').textContent = '간지를 만들지 못했어요. 다시 눌러 주세요.'; }
-    finally { btn.disabled = false; btn.textContent = '간지 PDF 만들기'; }
+    finally { btn.disabled = false; btn.textContent = gjMakeLabel(); }
   });
 
   // ---------- form + scan image ----------
